@@ -9,6 +9,7 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Paint.Style;
+import android.graphics.PaintFlagsDrawFilter;
 import android.graphics.Path;
 import android.graphics.Point;
 import android.graphics.PointF;
@@ -16,6 +17,7 @@ import android.graphics.drawable.Drawable;
 import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
+import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Gravity;
@@ -24,14 +26,12 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.RelativeLayout;
 
-import androidx.annotation.Nullable;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-public class SignatureTextView extends View {
+public class SignatureView extends View {
 
     private String drawableString;
     /**
@@ -67,6 +67,11 @@ public class SignatureTextView extends View {
     public static final boolean DEFAULT_EDITABLE = true;
 
 
+    /**
+     * 用于旋转缩放的Bitmap
+     */
+    private Bitmap mBitmap = null;
+
     private int mContentWidth; // 内容的宽度，会随着拉伸变换
     private int mContentHeight; //内容的高度，会随着拉伸变换
     private int mInitContentWidth; // 初始内容的宽度，不会随着拉伸变换
@@ -90,7 +95,7 @@ public class SignatureTextView extends View {
     /**
      * 图片的缩放比例
      */
-    private float mWidthScale = DEFAULT_SCALE;
+    private float mScale = DEFAULT_SCALE;
 
     /**
      * 用于缩放，旋转，平移的矩阵
@@ -221,11 +226,19 @@ public class SignatureTextView extends View {
     private List<Bitmap> tabBitmapList = new ArrayList<>();
     private IClickListener mClickListener = null;
 
-    public SignatureTextView(Context context, AttributeSet attrs) {
+    public SignatureView(Context context, AttributeSet attrs) {
         this(context, attrs, 0);
     }
 
-    public SignatureTextView(Context context, String content, int tabNum) {
+    public SignatureView(Context context, Bitmap bitmap, int tabNum) {
+        this(context, null);
+        this.mBitmap = bitmap;
+        initTab(tabNum);
+        setInitContentSize(mBitmap.getWidth(), mBitmap.getHeight());
+        init();
+    }
+
+    public SignatureView(Context context, String content, int tabNum) {
         this(context, null);
         this.content = content;
         textPaint = new TextPaint();
@@ -282,11 +295,12 @@ public class SignatureTextView extends View {
         }
     }
 
-    public SignatureTextView(Context context, AttributeSet attrs, int defStyle) {
+    public SignatureView(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
     }
 
     private void init() {
+        this.setBackgroundColor(Color.YELLOW);
         mPaint = new Paint();
         mPaint.setAntiAlias(true);
         mPaint.setColor(frameColor);
@@ -308,7 +322,7 @@ public class SignatureTextView extends View {
         }
         mControlPoint = LocationToPoint(controlLocation);
         mDeletePoint = LocationToPoint(DEFAULT_DELETE_LOCATION);
-        transform();
+        transform(true);
     }
 
     /**
@@ -329,6 +343,20 @@ public class SignatureTextView extends View {
         return editBitmapHeight;
     }
 
+    public Bitmap getBitmap() {
+        Bitmap bitmap;
+        if (!TextUtils.isEmpty(content) && staticLayout != null) {
+            bitmap = Bitmap.createBitmap(staticLayout.getWidth(), staticLayout.getHeight(), Bitmap.Config.ARGB_8888);
+            Log.i("test3", "getBitmap: getWidth>>" + staticLayout.getWidth() + " getHeight>>" + staticLayout.getHeight() + " " + bitmap.getWidth() + " " + bitmap.getHeight());
+            Canvas canvas = new Canvas(bitmap);
+            canvas.setDrawFilter(new PaintFlagsDrawFilter(0, Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG));
+            staticLayout.draw(canvas);
+        } else {
+            bitmap = mBitmap;
+        }
+        return bitmap;
+    }
+
     public Bitmap getSignatureViewBitmap() {
         isEditable = false;
         invalidate();
@@ -344,7 +372,6 @@ public class SignatureTextView extends View {
     private TextPaint textPaint;
     private int textColor = Color.BLACK;
     private Layout.Alignment textAlign = Layout.Alignment.ALIGN_CENTER;
-    private int textSize = 34;
 
     public void setTextColor(int color) {
         this.textColor = color;
@@ -387,26 +414,35 @@ public class SignatureTextView extends View {
 
 
     public float getScale() {
-        return mWidthScale;
+        return mScale;
     }
 
     @SuppressLint("DrawAllocation")
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+
+//        if (mBitmap != null)
+//            canvas.drawBitmap(mBitmap, matrix, null);
         if (staticLayout != null) {
             int offsetTop = mViewHeight / 2 - (mContentHeight / 2) - mDrawableHeight + getEditBitMapOffsetHeight() - framePadding;
             int offsetLeft = (mViewWidth - mContentWidth - mDrawableWidth) / 2;
+            textPaint.setTextSize(34);
+            staticLayout = new StaticLayout(content, textPaint, mContentWidth, textAlign, 1.0f, 0.0f, false);
             canvas.save();
-            //设置画该图片的起始点
-            canvas.translate(mDrawableWidth / 2 + offsetLeft, mDrawableHeight / 2 + offsetTop);
             //绕着图片中心进行旋转
-            canvas.rotate(mDegree, mContentWidth / 2, mContentHeight / 2);
+            canvas.rotate(mDegree, mContentWidth / 2 + offsetLeft, mContentHeight / 2 + offsetTop);
+            //设置画该图片的起始点
+//            canvas.translate((mDrawableWidth / 2) + offsetLeft, mDrawableHeight / 2 + offsetTop);
             staticLayout.draw(canvas);
+
             canvas.restore();
         }
         //处于可编辑状态才画边框和控制图标
         if (isEditable && mRTPoint != null) {
+
+            canvas.drawCircle(cp.x, cp.y, 4, mPaint);
+
             mPath.reset();
             mPath.moveTo(mLTPoint.x, mLTPoint.y);
             mPath.lineTo(mRTPoint.x, mRTPoint.y);
@@ -444,16 +480,20 @@ public class SignatureTextView extends View {
     }
 
     private void setContentWidth() {
-        if (content != null && staticLayout != null) {
-            mContentWidth = (int) (mInitContentWidth * mWidthScale);
+        if (mBitmap != null) {
+            mContentWidth = (int) (mBitmap.getWidth() * mScale);
+        } else if (content != null && staticLayout != null) {
+            mContentWidth = (int) (staticLayout.getWidth() * mScale);
         } else {
             throw new NullPointerException("内容或者bitmap不允许为空");
         }
     }
 
     private void setContentHeight() {
-        if (content != null && staticLayout != null) {
-            mContentHeight = staticLayout.getHeight();
+        if (mBitmap != null) {
+            mContentHeight = (int) (mBitmap.getHeight() * mScale);
+        } else if (content != null && staticLayout != null) {
+            mContentHeight = (int) (staticLayout.getHeight() * mScale);
         } else {
             throw new NullPointerException("内容或者bitmap不允许为空");
         }
@@ -462,31 +502,32 @@ public class SignatureTextView extends View {
     /**
      * 设置Matrix, 强制刷新
      */
-    private void transformDraw() {
-        transform();
+    private void transformDraw(boolean isNotPoint) {
+        transform(isNotPoint);
         invalidate();
         adjustLayout();
     }
 
-    private void transform() {
+    private void transform(boolean isNotPoint) {
         setContentWidth();
-        textPaint.setTextSize(textSize);
-        staticLayout = new StaticLayout(content, textPaint, mContentWidth, textAlign, 1.0f, 0.0f, false);
         setContentHeight();
         mViewWidth = getViewWidth();
         mViewHeight = getViewHeight();
         int offsetTop = mViewHeight / 2 - (mContentHeight / 2) - mDrawableHeight + getEditBitMapOffsetHeight() - framePadding;
         int offsetLeft = (mViewWidth - mContentWidth - mDrawableWidth) / 2;
-        computeRect(offsetLeft, offsetTop, mContentWidth + offsetLeft, mContentHeight + offsetTop, mDegree);
+        computeRect(offsetLeft, offsetTop, mContentWidth + offsetLeft, mContentHeight + offsetTop, mDegree, isNotPoint);
+        if (mBitmap != null) {
+            //设置缩放比例
+            matrix.setScale(mScale, mScale);
+            //绕着图片中心进行旋转
+            matrix.postRotate(mDegree, mContentWidth / 2, mContentHeight / 2);
+            //设置画该图片的起始点
+            matrix.postTranslate((mDrawableWidth / 2) + offsetLeft, mDrawableHeight / 2 + offsetTop);
+        }
     }
 
     private int getAllEditBitmapWidth() {
         return (editBitmapWidth * tabBitmapList.size()) + (DEFAULT_EDIT_BITMAP_PADDING * (tabBitmapList.size() - 1));
-    }
-
-    @Override
-    public void setOnClickListener(@Nullable OnClickListener l) {
-        super.setOnClickListener(l);
     }
 
     public boolean onTouchEvent(MotionEvent event) {
@@ -544,8 +585,7 @@ public class SignatureTextView extends View {
                     isClick = false;
                     isShowEditBitmap = false;
                     if (mStatus == STATUS_ZOOM) {
-//                        actionTextZoom(event);
-                        actionBitmapZoom();
+                        actionZoom();
                     } else if (mStatus == STATUS_DRAG) {
                         actionDrag();
                     } else {
@@ -603,7 +643,7 @@ public class SignatureTextView extends View {
         }
 
         mDegree = mDegree + newDegree;
-        transformDraw();
+        transformDraw(true);
     }
 
     private void actionDrag() {
@@ -618,11 +658,15 @@ public class SignatureTextView extends View {
         mInitContentWidth = width;
     }
 
-    private void actionBitmapZoom() {
+    private void actionZoom() {
         float scale = 1f;
 
         int halfBitmapWidth = mInitContentWidth / 2;
         int halfBitmapHeight = mInitContentHeight / 2;
+//
+//        int halfBitmapWidth = mBitmap.getWidth() / 2;
+//        int halfBitmapHeight = mBitmap.getHeight() / 2;
+//        Log.d("TEST", "halfBitmapWidth:" + halfBitmapWidth + "halfBitmapHeight" + halfBitmapHeight);
         //图片某个点到图片中心的距离
         float bitmapToCenterDistance = (float) Math.sqrt(halfBitmapWidth * halfBitmapWidth + halfBitmapHeight * halfBitmapHeight);
 
@@ -639,70 +683,10 @@ public class SignatureTextView extends View {
         } else if (scale >= MAX_SCALE) {
             scale = MAX_SCALE;
         }
-        textSize = (int) (34 * scale);
-//        mWidthScale = scale;
-        transformDraw();
-    }
 
-    private void actionTextZoom(MotionEvent event) {
-        PointF movePoint = new PointF(event.getX(), event.getY());
+        mScale = scale;
 
-        int halfBitmapWidth = mInitContentWidth / 2;
-        int halfBitmapHeight = mInitContentHeight / 2;
-        float widthScale = 0;
-        float heightScale = 0;
-        float ae = distance4PointF(movePoint, mCenterPoint);
-        float ce = distance4Point(movePoint, mRBPoint);
-        float ac = distance4Point(mRBPoint, mCenterPoint);
-
-        float cosa = (float) ((Math.pow(ae, 2) + Math.pow(ac, 2) - Math.pow(ce, 2)) / (2 * ae * ac));
-        float angleA = (float) Math.toDegrees(Math.acos(cosa));
-        float cosB = halfBitmapHeight / ac;
-        float angleB = (float) Math.toDegrees(Math.acos(cosB));
-        float angleP = angleB - angleA;
-        float newHeight = (float) (ae * Math.cos(Math.toRadians(angleP)));
-        float newWidth = (float) (ae * Math.sin(Math.toRadians(angleP)));
-
-        widthScale = newWidth / halfBitmapWidth;
-        heightScale = newHeight / halfBitmapHeight;
-
-        Log.d("TEST", "widthScale:" + widthScale + ",heightScale:" + heightScale);
-//        float scale = 1f;
-//        int halfBitmapWidth = mInitContentWidth / 2;
-//        int halfBitmapHeight = mInitContentHeight / 2;
-//        //图片某个点到图片中心的距离
-//        float bitmapToCenterDistance = (float) Math.sqrt(halfBitmapWidth * halfBitmapWidth + halfBitmapHeight * halfBitmapHeight);
-//
-//        //移动的点到图片中心的距离
-//        float moveToCenterDistance = distance4PointF(mCenterPoint, mCurMovePointF);
-//
-//        //计算缩放比例
-//        scale = moveToCenterDistance / bitmapToCenterDistance;
-////        //图片某个点到图片中心的距离
-//        float pointToCenterDistance = (float) Math.sqrt(halfBitmapWidth * halfBitmapWidth + halfBitmapHeight * halfBitmapHeight);
-//        float cosa = halfBitmapWidth / pointToCenterDistance;
-//        float sina = halfBitmapHeight / pointToCenterDistance;
-//
-//        float widthScale = (moveToCenterDistance * cosa) / halfBitmapWidth;
-//
-//        float heightScale = (moveToCenterDistance * sina) / halfBitmapHeight;
-
-        //缩放比例的界限判断
-        if (widthScale <= MIN_SCALE) {
-            widthScale = MIN_SCALE;
-        } else if (widthScale >= MAX_SCALE) {
-            widthScale = MAX_SCALE;
-        }
-        if (heightScale <= MIN_SCALE) {
-            heightScale = MIN_SCALE;
-        } else if (heightScale >= MAX_SCALE) {
-            heightScale = MAX_SCALE;
-        }
-//        textSize = (int) (34 * scale);
-        Log.d("TEST", "mCurMovePointF：" + mCurMovePointF.toString() + "，mPreMovePointF：" + mPreMovePointF.toString());
-        mWidthScale = widthScale;
-        textSize = (int) (34 * heightScale);
-        transformDraw();
+        transformDraw(true);
     }
 
     private int getViewWidth() {
@@ -726,27 +710,39 @@ public class SignatureTextView extends View {
      * @param bottom
      * @param degree
      */
-    private void computeRect(int left, int top, int right, int bottom, float degree) {
-        Point lt = new Point(left, top);
-        Point rt = new Point(right, top);
-        Point rb = new Point(right, bottom);
-        Point lb = new Point(left, bottom);
-        cp = new Point((right - left + 1) / 2 + left, (bottom - top + 1) / 2 + top);
-        obtainRoationPoint(mLTPoint, cp, lt, degree);
-        obtainRoationPoint(mRTPoint, cp, rt, degree);
-        obtainRoationPoint(mRBPoint, cp, rb, degree);
-        obtainRoationPoint(mLBPoint, cp, lb, degree);
+    private void computeRect(int left, int top, int right, int bottom, float degree, boolean isNotPoint) {
+        if (isNotPoint) {
+            Point lt = new Point(left, top);
+            Point rt = new Point(right, top);
+            Point rb = new Point(right, bottom);
+            Point lb = new Point(left, bottom);
+            cp = new Point((right - left + 1) / 2 + left, (bottom - top + 1) / 2 + top);
+            obtainRoationPoint(mLTPoint, cp, lt, degree);
+            obtainRoationPoint(mRTPoint, cp, rt, degree);
+            obtainRoationPoint(mRBPoint, cp, rb, degree);
+            obtainRoationPoint(mLBPoint, cp, lb, degree);
+        } else {
+            Point lt = new Point(mLTPoint.x, mLTPoint.y);
+            Point rt = new Point(mRTPoint.x, mRTPoint.y);
+            Point rb = new Point(mRBPoint.x, mRBPoint.y);
+            Point lb = new Point(mLBPoint.x, mLBPoint.y);
+            cp = new Point((right - left + 1) / 2 + left, (bottom - top + 1) / 2 + top);
+            obtainRoationPoint(mLTPoint, cp, lt, degree);
+            obtainRoationPoint(mRTPoint, cp, rt, degree);
+            obtainRoationPoint(mRBPoint, cp, rb, degree);
+            obtainRoationPoint(mLBPoint, cp, lb, degree);
+        }
 
-        mLTPoint.x += halfDrawableWidth;
-        mRTPoint.x += halfDrawableWidth;
-        mRBPoint.x += halfDrawableWidth;
-        mLBPoint.x += halfDrawableWidth;
-
-        //将Bitmap的四个点的Y坐标移动offsetY + halfDrawableHeight
-        mLTPoint.y += halfDrawableHeight;
-        mRTPoint.y += halfDrawableHeight;
-        mRBPoint.y += halfDrawableHeight;
-        mLBPoint.y += halfDrawableHeight;
+//        mLTPoint.x += halfDrawableWidth;
+//        mRTPoint.x += halfDrawableWidth;
+//        mRBPoint.x += halfDrawableWidth;
+//        mLBPoint.x += halfDrawableWidth;
+//
+//        //将Bitmap的四个点的Y坐标移动offsetY + halfDrawableHeight
+//        mLTPoint.y += halfDrawableHeight;
+//        mRTPoint.y += halfDrawableHeight;
+//        mRBPoint.y += halfDrawableHeight;
+//        mLBPoint.y += halfDrawableHeight;
     }
 
 
@@ -870,7 +866,6 @@ public class SignatureTextView extends View {
         invalidate();
     }
 
-
     /**
      * 两个点之间的距离
      *
@@ -879,32 +874,6 @@ public class SignatureTextView extends View {
      * @return
      */
     private float distance4PointF(PointF pf1, PointF pf2) {
-        float disX = pf2.x - pf1.x;
-        float disY = pf2.y - pf1.y;
-        return (float) Math.sqrt(disX * disX + disY * disY);
-    }
-
-    /**
-     * 两个点之间的距离
-     *
-     * @param pf1
-     * @param pf2
-     * @return
-     */
-    private float distance4Point(PointF pf1, Point pf2) {
-        float disX = pf2.x - pf1.x;
-        float disY = pf2.y - pf1.y;
-        return (float) Math.sqrt(disX * disX + disY * disY);
-    }
-
-    /**
-     * 两个点之间的距离
-     *
-     * @param pf1
-     * @param pf2
-     * @return
-     */
-    private float distance4Point(Point pf1, PointF pf2) {
         float disX = pf2.x - pf1.x;
         float disY = pf2.y - pf1.y;
         return (float) Math.sqrt(disX * disX + disY * disY);

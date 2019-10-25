@@ -14,9 +14,10 @@ import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
-import android.widget.RelativeLayout;
+import android.view.ViewGroup;
 
 import androidx.annotation.Nullable;
 
@@ -113,7 +114,7 @@ public class TestView extends View {
     private Point mInitRTPoint = new Point();
     private Point mInitRBPoint = new Point();
     private Point mInitLBPoint = new Point();
-    private Point cp = new Point();
+    private Point contentCenterPoint = new Point();
     /**
      * 用于缩放，旋转的控制点的坐标
      */
@@ -234,16 +235,68 @@ public class TestView extends View {
     }
 
     @Override
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom);
+        if (changed && mStatus == STATUS_INIT) {
+            ViewGroup mViewGroup = (ViewGroup) getParent();
+            if (null != mViewGroup) {
+                int parentWidth = mViewGroup.getWidth();
+                int parentHeight = mViewGroup.getHeight();
+                mCenterPoint.set(parentWidth / 2, parentHeight / 2);
+                mViewPaddingLeft = (int) (mCenterPoint.x - mViewWidth / 2);
+                mViewPaddingTop = (int) (mCenterPoint.y - mViewHeight / 2);
+            }
+        }
+    }
+
+    @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        setMeasuredDimension(500, 500);
+        setMeasuredDimension(getViewWidth(), getViewHeight());
+    }
+//
+//    private int getContentWidth() {
+//        return mContentWidth;
+//    }
+//
+//    private int getContentHeight() {
+//        return mContentHeight;
+//    }
+
+    private int getViewWidth() {
+        return Math.max(getAllEditBitmapWidth(), (getBitmapDiagonalLength() + mDeleteDrawableWidth + (framePadding * 2)));
     }
 
-    private int getContentWidth() {
-        return mInitContentWidth + (mDrawableWidth * 2);
+    private int getViewHeight() {
+        return getBitmapDiagonalLength() + getEditBitMapOffsetHeight() + (framePadding * 2);
+//        return getBitmapDiagonalLength() + getEditBitMapOffsetHeight() + editBitmapHeight + (framePadding * 2);
     }
 
-    private int getContentHeight() {
-        return mInitContentHeight + (mDrawableHeight * 2);
+    private int getBitmapDiagonalLength() {
+        return (int) Math.sqrt(Math.pow(mContentHeight, 2) + Math.pow(mContentWidth, 2));
+    }
+
+    private int getAllEditBitmapWidth() {
+//        return (editBitmapWidth * tabBitmapList.size()) + (DEFAULT_EDIT_BITMAP_PADDING * (tabBitmapList.size() - 1));
+        return 0;
+    }
+
+    private int getEditBitMapOffsetHeight() {
+//        return editBitmapHeight;
+        return 0;
+    }
+
+    /**
+     * 调整View的大小，位置
+     */
+    private void adjustLayout() {
+        int newPaddingLeft = (int) (mCenterPoint.x - getViewWidth() / 2);
+        int newPaddingTop = (int) (mCenterPoint.y - getViewHeight() / 2);
+
+        if (mViewPaddingLeft != newPaddingLeft || mViewPaddingTop != newPaddingTop) {
+            mViewPaddingLeft = newPaddingLeft;
+            mViewPaddingTop = newPaddingTop;
+            layout(newPaddingLeft, newPaddingTop, newPaddingLeft + getViewWidth(), newPaddingTop + getViewHeight());
+        }
     }
 
     public TestView(Context context, @Nullable AttributeSet attrs) {
@@ -257,6 +310,7 @@ public class TestView extends View {
     }
 
     private void init() {
+        this.setBackgroundColor(Color.YELLOW);
         textPaint = new TextPaint();
         textPaint.setColor(textColor);
         int defaultSize = 34;
@@ -289,8 +343,12 @@ public class TestView extends View {
         }
         mControlPoint = LocationToPoint(controlLocation);
         mDeletePoint = LocationToPoint(DEFAULT_DELETE_LOCATION);
+
         transform();
         initPoint();
+
+        mContentWidth = mRTPoint.x - mLTPoint.x;
+        mContentHeight = mLBPoint.y - mLTPoint.y;
     }
 
     private void initPoint() {
@@ -303,6 +361,8 @@ public class TestView extends View {
         mInitLTPoint.set(mLTPoint.x, mLTPoint.y);
         mInitRBPoint.set(mRBPoint.x, mRBPoint.y);
         mInitRTPoint.set(mRTPoint.x, mRTPoint.y);
+
+        contentCenterPoint.set((mLTPoint.x + mRBPoint.x) / 2, (mLTPoint.y + mRBPoint.y) / 2);
     }
 
     private void transform() {
@@ -314,6 +374,8 @@ public class TestView extends View {
         super.onDraw(canvas);
         //处于可编辑状态才画边框和控制图标
         if (isEditable && mRTPoint != null) {
+            canvas.drawCircle(contentCenterPoint.x, contentCenterPoint.y, 4, mPaint);
+
             mPath.reset();
             mPath.moveTo(mLTPoint.x, mLTPoint.y);
             mPath.lineTo(mRTPoint.x, mRTPoint.y);
@@ -356,10 +418,10 @@ public class TestView extends View {
                 isShowEditBitmap = true;
                 if (mStatus == STATUS_DRAG || mStatus == STATUS_ZOOM || mStatus == STATUS_ROTATE) {
                     invalidate();
-                    RelativeLayout.LayoutParams lp = (RelativeLayout.LayoutParams) this.getLayoutParams();
-                    lp.setMargins(mViewPaddingLeft, mViewPaddingTop, 0, 0);
-                    lp.removeRule(RelativeLayout.CENTER_IN_PARENT);
-                    setLayoutParams(lp);
+//                    RelativeLayout.LayoutParams lp = (RelativeLayout.LayoutParams) this.getLayoutParams();
+//                    lp.setMargins(mViewPaddingLeft, mViewPaddingTop, 0, 0);
+//                    lp.removeRule(RelativeLayout.CENTER_IN_PARENT);
+//                    setLayoutParams(lp);
                 } else if (mClickListener != null) {
                     if (isClick) {
                         mClickListener.onClickView();
@@ -392,7 +454,7 @@ public class TestView extends View {
                         actionTextZoom();
 //                        actionBitmapZoom();
                     } else if (mStatus == STATUS_DRAG) {
-//                        actionDrag();
+                        actionDrag();
                     } else {
                         actionRotate();
                     }
@@ -404,23 +466,43 @@ public class TestView extends View {
     }
 
     private void actionTextZoom() {
-        Point contentCenterPoint = new Point((int) (mCurMovePointF.x + mLTPoint.x) / 2, (int) (mCurMovePointF.y + mLTPoint.y) / 2);
-        obtainRoationPoint(mRBPoint, contentCenterPoint, mCurMovePointF, -mDegree);
-        obtainRoationPoint(mLTPoint, contentCenterPoint, mInitLTPoint, -mDegree);
-        int offsetWidth = mRBPoint.x - mInitRBPoint.x;
-        int offsetHeight = mRBPoint.y - mInitRBPoint.y;
+        contentCenterPoint = new Point((int) mCurMovePointF.x / 2, (int) (mCurMovePointF.y + mLTPoint.y) / 2);
+        // 讲旋转后的点回旋回去
+        Point rbPoint = new Point(); // 右下角的点
+        Point ltPoint = new Point(); // 左上角的点
+        obtainRoationPoint(rbPoint, contentCenterPoint, mCurMovePointF, -mDegree);
+        obtainRoationPoint(ltPoint, contentCenterPoint, mLTPoint, -mDegree);
 
-        mLBPoint.set(mInitLBPoint.x, mInitLBPoint.y + offsetHeight);
-        mRTPoint.set(mInitRTPoint.x + offsetWidth, mInitRTPoint.y);
+        Log.d("snapping", "旋转回原点：rbPoint-" + rbPoint.toString() + ",ltPoint-" + ltPoint.toString());
 
-        obtainRoationPoint(mLBPoint, contentCenterPoint, mLBPoint, mDegree);
-        obtainRoationPoint(mRTPoint, contentCenterPoint, mRTPoint, mDegree);
+        // 根据旋转后的对角点，算出其他两点的坐标
+        // 左下角的点为右下角的y坐标,x坐标为左上角的x坐标
+        // 右上角的点为右下角的x坐标，y坐标为左上角的y坐标
+        Point lbPoint = new Point(ltPoint.x, rbPoint.y);
+        Point rtPoint = new Point(rbPoint.x, ltPoint.y);
+
+        mContentWidth = Math.abs(ltPoint.x - rbPoint.x);
+        mContentHeight = Math.abs(ltPoint.y - rbPoint.y);
+
+        //回去旋转后的状态
+        obtainRoationPoint(mLTPoint, contentCenterPoint, ltPoint, mDegree);
+        obtainRoationPoint(mRTPoint, contentCenterPoint, rtPoint, mDegree);
+        obtainRoationPoint(mRBPoint, contentCenterPoint, rbPoint, mDegree);
+        obtainRoationPoint(mLBPoint, contentCenterPoint, lbPoint, mDegree);
 
         invalidate();
+        adjustLayout();
+
+    }
+
+    private void actionDrag() {
+        // 修改中心点
+        mCenterPoint.x += mCurMovePointF.x - mPreMovePointF.x;
+        mCenterPoint.y += mCurMovePointF.y - mPreMovePointF.y;
+        adjustLayout();
     }
 
     private void actionRotate() {
-        Point contentCenterPoint = new Point(mLTPoint.x + mRBPoint.x / 2, mLTPoint.y + mRBPoint.y / 2);
 
         double a = distance4PointF(mCenterPoint, mPreMovePointF);
         double b = distance4PointF(mPreMovePointF, mCurMovePointF);
@@ -447,10 +529,23 @@ public class TestView extends View {
 
         mDegree = mDegree + newDegree;
 
-        obtainRoationPoint(mLBPoint, contentCenterPoint, mLBPoint, mDegree);
-        obtainRoationPoint(mLTPoint, contentCenterPoint, mLTPoint, mDegree);
-        obtainRoationPoint(mRBPoint, contentCenterPoint, mRBPoint, mDegree);
-        obtainRoationPoint(mRTPoint, contentCenterPoint, mRTPoint, mDegree);
+
+        int halfContentWidth = mContentWidth / 2;
+        int halfContentHeight = mContentHeight / 2;
+        Point lt = new Point(contentCenterPoint.x - halfContentWidth, contentCenterPoint.y - halfContentHeight);
+        Point rt = new Point(contentCenterPoint.x + halfContentWidth, contentCenterPoint.y - halfContentHeight);
+        Point lb = new Point(contentCenterPoint.x - halfContentWidth, contentCenterPoint.y + halfContentHeight);
+        Point rb = new Point(contentCenterPoint.x + halfContentWidth, contentCenterPoint.y + halfContentHeight);
+        obtainRoationPoint(mLTPoint, contentCenterPoint, lt, mDegree);
+        obtainRoationPoint(mRTPoint, contentCenterPoint, rt, mDegree);
+        obtainRoationPoint(mRBPoint, contentCenterPoint, rb, mDegree);
+        obtainRoationPoint(mLBPoint, contentCenterPoint, lb, mDegree);
+
+
+//        obtainRoationPoint(mLBPoint, contentCenterPoint, mLBPoint, mDegree);
+//        obtainRoationPoint(mLTPoint, contentCenterPoint, mLTPoint, mDegree);
+//        obtainRoationPoint(mRBPoint, contentCenterPoint, mRBPoint, mDegree);
+//        obtainRoationPoint(mRTPoint, contentCenterPoint, mRTPoint, mDegree);
 
         invalidate();
     }
